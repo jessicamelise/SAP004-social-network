@@ -61,7 +61,7 @@ function post() {
   })
 
 
-  postar.addEventListener("click", (event) => {
+  postar.addEventListener("click", async (event) => {
     event.preventDefault();
     const post = {
       text: postTexto.value,
@@ -73,10 +73,13 @@ function post() {
     };
     const postCollection = firebase.firestore().collection("posts");
 
-    postCollection.add(post);
-    document.getElementById("postados").innerHTML = "";
+    let posteAdded = await postCollection.add(post);
+    let newPost = await posteAdded.get();
     postTexto.value = "";
-    readPosts();
+    
+    let postElement = createElementPost(newPost);
+    let postadosElement = document.querySelector("#postados")
+    postadosElement.prepend(postElement);
   });
 }
 
@@ -93,20 +96,15 @@ function getHoursPosted () {
     return `${fullDate.day}/${fullDate.month}/${fullDate.year} as ${fullDate.hours}:${fullDate.minutes}:${fullDate.seconds}`
 }
 
-function readPosts() {
-  const postCollection = firebase.firestore().collection("posts").orderBy("date", "asc");
+async function readPosts() {
+  const postCollection = firebase.firestore().collection("posts").orderBy("date", "desc");
   document.getElementById("postados").innerHTML = "";
 
-  postCollection
-    .get()
-    .then((snap) => {
-      snap.forEach((post) => {
-        addPosts(post);
-      });
-    })
-    .then(() => deletePosts())
-    .then(() => likePosts())
-    .then(() => editPosts());
+  let posts = await postCollection.get()
+  posts.forEach((post) => {
+    let postElement = createElementPost(post);
+    document.querySelector("#postados").appendChild(postElement); 
+  });
 }
 
 function editPosts() {
@@ -152,10 +150,43 @@ function deletePosts() {
   });
 }
 
+
+async function deletePost(event, postId) {
+  const postCollection = firebase.firestore().collection("posts");
+  await postCollection.doc(postId).delete();
+  let post = document.getElementById(`post_${postId}`);
+  post.remove();
+}
+
+
+async function likePost(event, postId) {
+  const postCollection = firebase.firestore().collection("posts");
+  let post = await postCollection.doc(postId).get(); 
+  let postElement = document.getElementById(`post_${postId}`);
+  let likeValueElement = postElement.getElementsByClassName("like-value")[0];
+  let likes = post.data().likes + 1;
+  await postCollection.doc(postId).update({ likes: likes });
+  likeValueElement.innerHTML = likes;
+}
+
+async function editPost(event, postId) {
+  let postElement = document.getElementById(`post_${postId}`);
+  let textEditElement = postElement.getElementsByClassName("post-text-area")[0];
+
+  if (textEditElement.contentEditable != "true") {
+    textEditElement.contentEditable = true;
+    textEditElement.focus();  
+  } else {
+    const postCollection = firebase.firestore().collection("posts");
+    await postCollection.doc(postId).update({ text: textEditElement.innerHTML });
+    textEditElement.contentEditable = false;
+  }
+}
+
 function likePosts() {
   const postCollection = firebase.firestore().collection("posts");
 
-  const likeButton = document.querySelectorAll(".like");
+  const likeButton = document.querySelectorAll("like");
 
   likeButton.forEach((element) => {
     element.addEventListener("click", (event) => {
@@ -167,9 +198,9 @@ function likePosts() {
   });
 }
 
-function addPosts(post) {
+
+function createElementPost(post) {
   const postTemplate = `
-    <li class="each-post" id='${post.id}'>
       <div class="name-edit-post">
         <p class="post-user-name">${post.data().name}</p>
         <span class="edit">
@@ -187,9 +218,21 @@ function addPosts(post) {
           <img src="img/trash-alt-regular.svg" alt="delete-posts">
         </span>
       </div>
-    </li>
   `;
-  document.querySelector("#postados").innerHTML += postTemplate;
+  let postElement = document.createElement("li");
+  postElement.classList.add("each-post")
+  postElement.id = `post_${post.id}`
+  postElement.innerHTML = postTemplate;
+  postElement.getElementsByClassName("edit")[0].addEventListener("click", async (event) => {
+    await editPost(event, post.id);
+  });
+  postElement.getElementsByClassName("like")[0].addEventListener("click", async (event) => {
+    await likePost(event, post.id);
+  });
+  postElement.getElementsByClassName("delete")[0].addEventListener("click", async (event) => {
+    await deletePost(event, post.id);
+  });
+  return postElement;
 }
 
 function register() {
